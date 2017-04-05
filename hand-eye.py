@@ -50,21 +50,27 @@ def servo_angle(i, a):
 #    print 'sa: ', sa
     return int(sa)
 
-def move_to_angle(ser, angles, time):
+def move_to_angle(ser, angles, time=None, spd=None):
 # angles is a 5 tuple of angles in radians or None for no instruction to that servo
     print angles
     out = ''
     if (len(angles) != 6):
         print('angles should be a 6-tuple')
         return -1
+    if spd == None:
+        s = ''
+    else:
+        s = 'S{}'.format(spd)
     for (i,a) in enumerate(angles):
         if a!=None:
             sa = servo_angle(i,a)
             if (sa == -1):
                 print('bad servo angle for servo', i)
                 return -1
-            out = out + '#{}P{}'.format(i, sa)
-    out = out + 'T{}\r'.format(time)
+            out = out + '#{}P{}{}'.format(i, sa, s)
+    if time != None:
+        out = out + 'T{}'.format(time)
+    out = out+'\r'
     print out
     ser.write(out)
 
@@ -97,15 +103,19 @@ def find_angles(T3, a):
     print 'find_angles( ', T3, a, ')'
     T3 = (float(T3[0]), float(T3[1]), float(T3[2]))
     b0, T2 = find_rotation(T3)
-    P2 = (T2[0] - l3*cos(a), T2[1] -l3*sin(a))
-    d_sq = P2[0]*P2[0] + P2[1]*P2[1]
-    d = sqrt(d_sq)
-    b2 = acos( (P2[0]*P2[0]+P2[1]*P2[1]-l1*l1-l2*l2) / (-2*l1*l2) )
-    c1 = asin(P2[1]/d)
-    c0 = acos( (l2*l2 - l1*l1 - d_sq) / (-2*l1*d) )
-    b1 = pi/2 - c1 - c0
-    b3 = 3*pi/2 + a + b1 - b2
-    print b0/pi*180, b1/pi*180, b2/pi*180, b3/pi*180
+    try:
+        P2 = (T2[0] - l3*cos(a), T2[1] -l3*sin(a))
+        d_sq = P2[0]*P2[0] + P2[1]*P2[1]
+        d = sqrt(d_sq)
+        b2 = acos( (P2[0]*P2[0]+P2[1]*P2[1]-l1*l1-l2*l2) / (-2*l1*l2) )
+        c1 = asin(P2[1]/d)
+        c0 = acos( (l2*l2 - l1*l1 - d_sq) / (-2*l1*d) )
+        b1 = pi/2 - c1 - c0
+        b3 = 3*pi/2 + a + b1 - b2
+        print b0/pi*180, b1/pi*180, b2/pi*180, b3/pi*180
+    except ValueError:
+        b0,b1,b2,b3 = (None, None, None, None)
+        print 'Angles Error'        
     return b0, b1, b2, b3
 
 thresh_lo = 700 # that's actually the physics of the R200 - it can detect from 50cm 
@@ -299,7 +309,7 @@ if __name__ == '__main__':
                     state = 'wait_target'
             else:
                 pic = cv2.bitwise_and(c, c)
-        if (state == 'wait_target'):
+        elif (state == 'wait_target'):
             blob, blob_cent = detect_color(c,d, red_lower, red_upper)
             if (blob != None):
                 pic = draw_arm(c,d,blob, blob_cent)
@@ -314,16 +324,33 @@ if __name__ == '__main__':
                     target_cent_p = np.array([target_cent[0] , target_cent[1]], np.uint)
                     target_T = dev.deproject_pixel_to_point(target_cent_p, get_depth(d, target_cent_p))
                     cv2.rectangle(pic,(bx,by),(bx+bw,by+bh),(0,255,255),2)
-                    cv2.putText(pic, 'press <space> to start.', (0,100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
+                    cv2.putText(pic, 'press <space> to start tracking.', (0,100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
                     cv2.putText(pic, '({},{},{})'.format(int(target_T[0]), int(target_T[1]), int(target_T[2])), (0,150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
                 else:
                     target = None
             else:
                 pic = cv2.bitwise_and(c, c)
-            cv2.circle(pic, arm_cent, 5, [0,0,255], 2)
-        if (state == 'move_to_target'):
+                cv2.putText(pic, 'Waiting for target', (0,100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
+        elif (state == 'track_target'):
+            blob, blob_cent = detect_color(c,d, red_lower, red_upper)
+            if (blob != None):
+                pic = draw_arm(c,d,blob, blob_cent)
+                bx,by,bw,bh = cv2.boundingRect(blob)
+                cv2.rectangle(pic,(bx,by),(bx+bw,by+bh),(0,0,255),1)
+                b_area = bw*bh
+                area = cv2.contourArea(blob)
+                #print b_area, area, (b_area - area) / area
+                if (b_area - area) < (0.25 * area):
+                    new_target = blob
+                    new_target_cent = blob_cent
+                    new_target_cent_p = np.array([new_target_cent[0] , new_target_cent[1]], np.uint)
+                    new_target_T = dev.deproject_pixel_to_point(new_target_cent_p, get_depth(d, new_target_cent_p))
+                    delta = np.array(new_target_T) - np.array(target_T)
+                    new_T = np.array(T_init)+np.array(xform_to_arm(delta))
+                    b0,b1,b2,b3 = find_angles(new_T,0)
+                    move_to_angle(ser, (b0,b1,b2,b3,0,pi), None, 400)
+        else:
             pic = cv2.bitwise_and(c, c)
-            cv2.putText(pic, 'press <space> to restart.', (0,100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
         
         cd = np.concatenate((c,pic), axis=1)
        
@@ -335,15 +362,8 @@ if __name__ == '__main__':
             break
         elif key == ord(' '):
             if state == 'wait_target' and target != None:
-                state = 'move_to_target'
-                print 'target_T: ', target_T, 'camera_T: ', camera_T
-                delta = np.array(target_T) - np.array(camera_T)
-                print 'delta: ', delta
-                new_T = np.array(T_init)+np.array(xform_to_arm(delta))
-                print 'T_init: ', T_init, 'new_T: ', new_T
-                b0,b1,b2,b3 = find_angles(new_T,0)
-                move_to_angle(ser, (b0,b1,b2,b3,0,pi), 2000)
-            elif state == 'move_to_target':
+                state = 'track_target'
+            elif state == 'track_target':
                 state = 'wait_target'
         elif key == ord('f'):
             cv2.imwrite('tmp.jpg', cd)
