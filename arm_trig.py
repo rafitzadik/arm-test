@@ -56,6 +56,9 @@ if __name__ == '__main__':
     a = 0
     T3 = (50.0, 40.0, 0)
     
-    b0, b1, b2, b3 = find_angles(T3, a, l1, l2, l3)
-    
+    b0, b1, b2, b3 = find_angles((10,30,5), a, l1, l2, l3)
+    draw_arm(b0, b1, b2, b3, l1, l2, l3)
+    b0, b1, b2, b3 = find_angles((10,30,10), a, l1, l2, l3)
+    draw_arm(b0, b1, b2, b3, l1, l2, l3)
+    b0, b1, b2, b3 = find_angles((10,30,20), a, l1, l2, l3)
     draw_arm(b0, b1, b2, b3, l1, l2, l3)
